@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f3f6fb">
+  <title>SmallAI · 本地训练室</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="SmallAI 训练首页">
+        <svg class="brand-icon" viewBox="0 0 36 36" fill="none" aria-hidden="true"><rect width="36" height="36" rx="10" fill="#235ed6"/><path d="M11 11L25 18L11 25M11 11V25" stroke="white" stroke-width="1.7"/><circle cx="11" cy="11" r="3" fill="#baceff"/><circle cx="25" cy="18" r="3" fill="white"/><circle cx="11" cy="25" r="3" fill="#baceff"/></svg>
+        <span>SmallAI</span><span class="brand-divider"></span><span class="brand-subtitle">本地训练室</span>
+      </a>
+      <div class="top-actions"><span class="connection" id="connection"><i></i><span id="connection-text">正在连接</span></span><button class="text-button" id="help-button">使用说明 <span aria-hidden="true">↗</span></button></div>
+    </header>
+
+    <section class="page-heading">
+      <div><p class="eyebrow">模型训练</p><h1>让每一步训练看得见。</h1><p class="subtitle">配置一次本地训练，实时查看进度、loss 和保存状态。</p></div>
+      <div class="device"><span class="device-icon" aria-hidden="true">▦</span><div><strong>本机 CPU</strong><span>无需云服务 · 无需显卡</span></div></div>
+    </section>
+
+    <main class="workspace">
+      <aside class="panel settings-panel">
+        <div class="panel-heading"><h2>训练设置</h2><button class="primary-button start-button" id="start-button" type="submit" form="train-form" disabled><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.5 2.8a.8.8 0 011.2-.7l8 5.2a.8.8 0 010 1.4l-8 5.2a.8.8 0 01-1.2-.7z"/></svg><span id="start-label">开始训练</span></button></div>
+        <form id="train-form">
+          <fieldset id="settings-fields">
+            <label for="stage">训练阶段</label>
+            <select id="stage"><option value="pretrain">从零预训练</option><option value="sft">对话与工具调用训练</option></select>
+            <p class="field-hint" id="stage-hint">从随机权重开始，学习文本规律。</p>
+
+            <div id="model-field"><label for="model">模型配置</label><select id="model"></select><p class="field-hint" id="model-hint">读取模型配置…</p></div>
+            <div id="checkpoint-field" hidden><label for="checkpoint">开始训练的权重</label><select id="checkpoint"></select><p class="field-hint" id="checkpoint-hint">使用自己已经训练的权重。</p></div>
+
+            <label for="dataset">训练数据</label><select id="dataset"></select>
+            <p class="field-hint dataset-hint" id="dataset-hint">读取本地数据…</p>
+            <div class="dataset-sources" id="dataset-sources"></div>
+
+            <label for="steps">训练步数</label><input id="steps" type="number" min="1" max="1000000" step="1" value="100" required>
+            <p class="field-hint" id="step-hint">一次参数更新计为一步。</p>
+
+            <div class="field-pair">
+              <div><label for="learning-rate">学习率</label><input id="learning-rate" type="number" min="0.0000001" max="0.01" step="any" value="0.0003" required></div>
+              <div><label for="threads">CPU 线程</label><input id="threads" type="number" min="1" max="32" step="1" value="4" required></div>
+            </div>
+
+            <details class="advanced"><summary>更多设置</summary>
+              <div id="block-field"><label for="block-size">文本块长度</label><select id="block-size"><option value="64">64 token</option><option value="128" selected>128 token</option><option value="256">256 token</option><option value="512">512 token</option></select></div>
+              <p class="field-hint" id="sft-block-hint" hidden>对话长度由准备好的数据集决定。</p>
+              <div class="field-pair"><div><label for="batch-size">每批样本</label><input id="batch-size" type="number" min="1" max="8" value="1" required></div><div><label for="accumulation">梯度累积</label><input id="accumulation" type="number" min="1" max="32" value="1" required></div></div>
+            </details>
+          </fieldset>
+          <p class="form-note" id="form-note">每次新训练都会创建独立的输出目录。</p>
+        </form>
+        <section class="data-library" aria-labelledby="data-library-title">
+          <div class="data-library-heading"><h3 id="data-library-title">公开训练数据</h3><button class="text-button" id="data-prepare" type="button" disabled>获取数据</button></div>
+          <p>中文网页、中文对话、繁体中文函数调用。按限额下载，不下载模型权重。</p>
+          <details><summary>下载数量</summary><label for="web-docs">中文网页</label><input id="web-docs" type="number" min="20" max="20000" value="5000"><div class="field-pair"><div><label for="chat-rows">对话上限</label><input id="chat-rows" type="number" min="20" max="20000" value="1500"></div><div><label for="tool-rows">调用上限</label><input id="tool-rows" type="number" min="20" max="20000" value="1500"></div></div></details>
+          <div class="data-preparation" id="data-preparation" hidden><div><span id="data-message">等待下载</span><button class="text-button" id="data-cancel" type="button" hidden>取消</button></div><progress id="data-progress" max="100" aria-label="当前数据准备阶段进度"></progress><span class="data-detail" id="data-detail"></span></div>
+        </section>
+      </aside>
+
+      <div class="main-column">
+        <div class="active-notice" id="active-notice" hidden><span>另一个训练正在运行</span><button class="text-button" id="go-active">查看进行中的训练 →</button></div>
+        <section class="panel progress-panel" aria-labelledby="progress-title">
+          <div class="panel-heading"><div class="heading-inline"><h2 id="progress-title">训练进度</h2><span class="status-badge" id="status-badge" data-status="idle">准备就绪</span></div><div class="run-actions"><button class="secondary-button" id="resume-button" hidden>继续训练</button><button class="stop-button" id="stop-button" hidden><span class="stop-square" aria-hidden="true"></span><span id="stop-label">停止并保存</span></button></div></div>
+          <p class="run-context" id="run-context" hidden></p>
+          <div class="progress-readout"><div><strong id="progress-percent">0<span>%</span></strong><p id="step-count">0 / 100 步</p></div><div class="eta"><span id="eta-label">预计剩余</span><strong id="eta">等待开始</strong></div></div>
+          <progress id="training-progress" max="100" value="0" aria-label="训练完成进度">0%</progress>
+          <p class="progress-caption" id="progress-caption">设置好参数后，点击左侧「开始训练」。</p>
+          <div class="stats">
+            <div><span class="stat-label"><i class="dot blue"></i>训练 loss</span><strong id="loss">—</strong></div>
+            <div><span class="stat-label"><i class="dot amber"></i>验证 loss</span><strong id="validation-loss">—</strong></div>
+            <div><span class="stat-label">训练速度</span><strong id="speed">—</strong><small>目标 token / 秒</small></div>
+            <div><span class="stat-label">已用时间</span><strong id="elapsed">—</strong></div>
+          </div>
+          <div class="output-path" id="output-row" hidden><span>本次输出</span><code id="output-path"></code><button class="text-button" id="copy-path" title="复制输出目录">复制</button></div>
+        </section>
+
+        <section class="panel chart-panel" aria-labelledby="chart-title"><div class="panel-heading"><h2 id="chart-title">Loss 曲线</h2><div class="legend"><span><i class="dot blue"></i>训练</span><span><i class="dot amber"></i>验证</span></div></div><div class="chart-container" id="chart-container"><canvas id="loss-chart" role="img" aria-label="随训练步数变化的训练 loss 和验证 loss 曲线"></canvas><div class="chart-empty" id="chart-empty"><span class="empty-chart-icon" aria-hidden="true">⌁</span><strong>等待第一步训练</strong><span>开始后，这里会绘制真实的 loss 曲线。</span></div></div></section>
+
+        <details class="panel log-panel" open><summary><span>训练日志</span><span class="log-count" id="log-count">等待输出</span></summary><pre id="logs" tabindex="0">训练启动后，输出会显示在这里。</pre></details>
+
+        <section class="panel history-panel" aria-labelledby="history-title"><div class="panel-heading"><h2 id="history-title">最近训练</h2><span class="tiny-label" id="history-count">0 次实验</span></div><div class="table-wrap"><table><thead><tr><th>开始时间</th><th>训练阶段</th><th>进度</th><th>状态</th><th><span class="sr-only">操作</span></th></tr></thead><tbody id="history-body"></tbody></table></div><p class="history-empty" id="history-empty">还没有训练记录。开始一次训练，记录会自动保存在这里。</p></section>
+      </div>
+    </main>
+    <footer><span>全部数据与权重保存在本机。关闭页面后，训练仍会继续。</span><button class="text-button" id="shutdown-button">关闭界面服务</button></footer>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden><span id="toast-message"></span><button id="toast-close" aria-label="关闭提示">×</button></div>
+  <dialog id="help-dialog"><div class="dialog-heading"><h2>开始第一次训练</h2><button class="icon-button" id="help-close" aria-label="关闭说明">×</button></div><ol><li>在「公开训练数据」点击获取数据，或直接选择已经准备好的公开数据。</li><li>选择「从零预训练」，点击「开始训练」。进度、loss、速度和日志会实时更新。</li><li>想提前结束时，点击「停止并保存」；稍后可继续同一份训练计划。</li><li>预训练完成后，选择使用相同分词器的对话与工具数据，以及刚保存的权重。</li></ol><p>公开数据下载的是适合本机试训的子集。进度 100% 表示计划步数完成，模型能力需单独评测。函数调用数据用于学习工具选择和参数，实际执行仍限于本地已注册工具。</p><p class="dialog-note">每份公开数据配套新的分词器。示例数据、旧权重和以前的训练记录都会保留。</p></dialog>
+</body>
+</html>
