@@ -19,6 +19,8 @@ from .model import ModelConfig
 from .tokenizer import LocalTokenizer
 from .training import checkpoint_metadata
 from .public_data import PreparationCancelled, prepare_public_data
+from .question_bank import (MAX_UPLOAD_BYTES, TEMPLATE, prepare_question_bank,
+                            preview_question_bank, question_package)
 
 
 ACTIVE = {"starting", "running", "stopping"}
@@ -156,7 +158,7 @@ class TrainingManager:
         preferred = "outputs/cpu_demo/pretrain/last.pt"
         default_checkpoint = next((c["path"] for c in checkpoints if c["path"] == preferred),
                                   checkpoints[0]["path"] if checkpoints else None)
-        datasets.sort(key=lambda d: (d["source_type"] != "public", d["path"]), reverse=False)
+        datasets.sort(key=lambda d: ({"question_bank": 0, "public": 1}.get(d["source_type"], 2), d["path"]))
         return {"workspace": str(self.workspace), "models": models, "datasets": datasets,
                 "checkpoints": checkpoints[:80], "default_checkpoint": default_checkpoint,
                 "default_threads": min(4, os.cpu_count() or 1), "max_threads": min(32, os.cpu_count() or 1),
@@ -166,13 +168,32 @@ class TrainingManager:
         return self.data_job.get("status") in ("running", "cancelling")
 
     def prepare_public(self, body):
+        options = {key: self._integer(body, key, default, 20, 20000)
+                   for key, default in (("web_docs", 5000), ("chat_rows", 1500), ("tool_rows", 1500))}
+        return self._prepare_data("public", "正在连接公开数据源", prepare_public_data, options)
+
+    def preview_questions(self, body):
         with self.lock:
             if self.closing or self.active_id or self.data_busy():
                 raise BusyError("请先结束当前训练或数据准备任务")
-            options = {key: self._integer(body, key, default, 20, 20000)
-                       for key, default in (("web_docs", 5000), ("chat_rows", 1500), ("tool_rows", 1500))}
+        return preview_question_bank(self.workspace, body.get("filename"), body.get("content"))
+
+    def prepare_questions(self, body):
+        identifier = body.get("import_id")
+        question_package(self.workspace, identifier)
+        token_path = body.get("tokenizer_path")
+        if token_path is not None:
+            token_path = self._path(token_path)
+            LocalTokenizer(token_path)
+        return self._prepare_data("question_bank", "正在准备上传的题库", prepare_question_bank,
+                                  {"import_id": identifier, "tokenizer_path": token_path})
+
+    def _prepare_data(self, kind, message, prepare, options):
+        with self.lock:
+            if self.closing or self.active_id or self.data_busy():
+                raise BusyError("请先结束当前训练或数据准备任务")
             self.data_cancel.clear()
-            self.data_job = {"status": "running", "phase": "sources", "message": "正在连接公开数据源", "options": options}
+            self.data_job = {"status": "running", "kind": kind, "phase": "sources", "message": message}
             json_file_path = self.control / "public_data_state.json"
             atomic_json(json_file_path, self.data_job)
 
@@ -183,9 +204,10 @@ class TrainingManager:
 
             def work():
                 try:
-                    result = prepare_public_data(self.workspace, **options, progress=progress, cancel=self.data_cancel)
+                    result = prepare(self.workspace, **options, progress=progress, cancel=self.data_cancel)
                     with self.lock:
-                        self.data_job.update(status="completed", result=result, message="公开数据已准备好")
+                        self.data_job.update(status="completed", result=result,
+                                             message="题库已准备好" if kind == "question_bank" else "公开数据已准备好")
                 except PreparationCancelled as error:
                     with self.lock:
                         self.data_job.update(status="cancelled", message=str(error))
@@ -205,7 +227,7 @@ class TrainingManager:
             if not self.data_busy():
                 raise ValueError("没有正在准备的数据")
             self.data_cancel.set()
-            self.data_job.update(status="cancelling", message="正在取消，已下载的缓存会保留")
+            self.data_job.update(status="cancelling", message="正在取消，已保存的数据会保留")
             return self.data_job.copy()
 
     @staticmethod
@@ -433,6 +455,8 @@ def create_server(workspace, port=8765):
                 if url.path == "/api/state":
                     identifier = parse_qs(url.query).get("run_id", [None])[0]
                     return self.send(200, manager.state(identifier))
+                if url.path == "/api/questions/template.csv":
+                    return self.send(200, TEMPLATE.encode("utf-8-sig"), "text/csv; charset=utf-8")
                 assets = {"/": ("index.html", "text/html; charset=utf-8"),
                           "/app.js": ("app.js", "text/javascript; charset=utf-8"),
                           "/styles.css": ("styles.css", "text/css; charset=utf-8"),
@@ -451,8 +475,9 @@ def create_server(workspace, port=8765):
                 return self.send(403, {"error": "请从本机训练界面发起操作"})
             try:
                 length = int(self.headers.get("Content-Length", "0"))
-                if not 2 <= length <= 16384:
-                    raise ValueError("请求内容无效")
+                limit = ((MAX_UPLOAD_BYTES + 2) // 3 * 4 + 4096) if self.path == "/api/questions/preview" else 16384
+                if not 2 <= length <= limit:
+                    raise ValueError("请求内容无效或过大；题库最多 10 MiB")
                 body = json.loads(self.rfile.read(length))
                 if not isinstance(body, dict):
                     raise ValueError("请求内容必须是对象")
@@ -462,6 +487,10 @@ def create_server(workspace, port=8765):
                     return self.send(200, manager.prepare_public(body))
                 if self.path == "/api/data/cancel":
                     return self.send(200, manager.cancel_public())
+                if self.path == "/api/questions/preview":
+                    return self.send(200, manager.preview_questions(body))
+                if self.path == "/api/questions/prepare":
+                    return self.send(200, manager.prepare_questions(body))
                 if self.path == "/api/stop":
                     return self.send(200, manager.stop())
                 if self.path == "/api/resume":
@@ -480,7 +509,11 @@ def create_server(workspace, port=8765):
             except (ValueError, OSError, KeyError, TypeError) as error:
                 return self.send(400, {"error": str(error)})
 
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    class LocalServer(ThreadingHTTPServer):
+        # On Windows SO_REUSEADDR can silently bind another app's listening port.
+        allow_reuse_address = os.name != "nt"
+
+    server = LocalServer(("127.0.0.1", port), Handler)
     server.manager = manager
     return server
 

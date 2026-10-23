@@ -7,7 +7,7 @@ name = "smallai-cpu"
 version = "0.1.0"
 description = "A Chinese language model trained from random weights on a CPU"
 requires-python = ">=3.10"
-dependencies = ["torch>=2.2,<3", "tokenizers>=0.20,<1", "numpy>=1.26,<3"]
+dependencies = ["torch>=2.2,<3", "tokenizers>=0.20,<1", "numpy>=1.26,<3", "openpyxl>=3.1,<4"]
 
 [project.optional-dependencies]
 test = ["pytest>=8,<10"]

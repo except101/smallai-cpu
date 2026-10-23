@@ -123,3 +123,14 @@ def test_server_serves_ui_and_rejects_invalid_start_requests(ui_workspace):
         server.manager.close()
         server.server_close()
         worker.join(3)
+
+
+def test_server_rejects_a_port_already_used_by_another_instance(ui_workspace):
+    first = create_server(ui_workspace, port=0)
+    try:
+        with pytest.raises(OSError):
+            second = create_server(ui_workspace, port=first.server_address[1])
+            second.server_close()
+    finally:
+        first.manager.close()
+        first.server_close()

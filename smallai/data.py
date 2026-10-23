@@ -61,7 +61,8 @@ def iter_corpus(paths):
             raise ValueError(f"预训练语料仅支持 .jsonl 或 .txt：{path}")
 
 
-def prepare_dataset(stage, paths, tokenizer_path, output, block_size=1023, val_fraction=0.1, metadata=None):
+def prepare_dataset(stage, paths, tokenizer_path, output, block_size=1023, val_fraction=0.1, metadata=None,
+                    split_keys=None):
     if stage not in ("pretrain", "sft") or block_size < 2:
         raise ValueError("stage 或 block_size 无效")
     is_validation("check", val_fraction)
@@ -99,7 +100,8 @@ def prepare_dataset(stage, paths, tokenizer_path, output, block_size=1023, val_f
                     duplicates += 1
                     continue
                 seen.add(fingerprint)
-                split = "val" if is_validation(identity, val_fraction) else "train"
+                split_key = split_keys.get(identity, identity) if split_keys is not None else identity
+                split = "val" if is_validation(split_key, val_fraction) else "train"
                 counts[split]["documents"] += 1
                 counts[split]["tokens"] += len(ids)
                 counts[split]["target_tokens"] += sum(value != -100 for value in labels[1:])

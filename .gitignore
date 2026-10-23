@@ -15,6 +15,7 @@ outputs/
 data/prepared/
 data/public/
 data/cache/
+data/imported/
 vendor/
 data/tokenizer.json
 data/tokenizer.meta.json
